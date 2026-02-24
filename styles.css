@@ -1,0 +1,153 @@
+/* Force Jira header containers to grow for the card */
+[data-testid="horizontal-nav-header.ui.board-header.header"]:has(#jsg-sprint-goal-banner) {
+  height: auto !important;
+  min-height: auto !important;
+  overflow: visible !important;
+  align-items: center !important;
+}
+
+[data-testid="horizontal-nav-header.ui.board-header.header"]:has(#jsg-sprint-goal-banner) > * {
+  height: auto !important;
+  min-height: auto !important;
+  overflow: visible !important;
+}
+
+[data-testid="horizontal-nav.ui.content.horizontal-nav"]:has(#jsg-sprint-goal-banner),
+[data-testid="horizontal-nav.ui.content.horizontal-nav"]:has(#jsg-sprint-goal-banner) > * {
+  height: auto !important;
+  min-height: auto !important;
+  overflow: visible !important;
+}
+
+/* Jira Sprint Goal — inline card */
+
+#jsg-sprint-goal-banner {
+  display: inline-flex;
+  flex-direction: column;
+  margin-left: 12px;
+  padding: 6px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  z-index: 200;
+  flex-shrink: 0;
+  max-width: 494px;
+}
+
+.jsg-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.jsg-sprint-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0891b2;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.jsg-header-sep {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.jsg-days-text {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.jsg-days-normal {
+  color: #047857;
+}
+
+.jsg-days-warning {
+  color: #b45309;
+}
+
+.jsg-days-critical {
+  color: #dc2626;
+}
+
+.jsg-goal-text {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #334155;
+  margin-top: 2px;
+  word-break: break-word;
+}
+
+.jsg-no-goal {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* Dark mode — detect via Jira's data-color-mode attribute */
+html[data-color-mode="dark"] #jsg-sprint-goal-banner {
+  background: #1e293b;
+  border-color: #334155;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+html[data-color-mode="dark"] .jsg-sprint-name {
+  color: #22d3ee;
+}
+
+html[data-color-mode="dark"] .jsg-header-sep {
+  color: #64748b;
+}
+
+html[data-color-mode="dark"] .jsg-goal-text {
+  color: #cbd5e1;
+}
+
+html[data-color-mode="dark"] .jsg-days-normal {
+  color: #6ee7b7;
+}
+
+html[data-color-mode="dark"] .jsg-days-warning {
+  color: #fcd34d;
+}
+
+html[data-color-mode="dark"] .jsg-days-critical {
+  color: #fca5a5;
+}
+
+/* Fallback: OS-level dark preference */
+@media (prefers-color-scheme: dark) {
+  html:not([data-color-mode="light"]) #jsg-sprint-goal-banner {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  }
+
+  html:not([data-color-mode="light"]) .jsg-sprint-name {
+    color: #22d3ee;
+  }
+
+  html:not([data-color-mode="light"]) .jsg-header-sep {
+    color: #64748b;
+  }
+
+  html:not([data-color-mode="light"]) .jsg-goal-text {
+    color: #cbd5e1;
+  }
+
+  html:not([data-color-mode="light"]) .jsg-days-normal {
+    color: #6ee7b7;
+  }
+
+  html:not([data-color-mode="light"]) .jsg-days-warning {
+    color: #fcd34d;
+  }
+
+  html:not([data-color-mode="light"]) .jsg-days-critical {
+    color: #fca5a5;
+  }
+}

@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# OS and IDE
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-*
+
+# Cursor / editor
+.cursor/
+*.log
+
+# Build / packaging (if you add later)
+*.crx
+*.pem
+dist/
+*.zip
+
+# Env / secrets (if you ever add config)
+.env
+.env.local
+*.pem
