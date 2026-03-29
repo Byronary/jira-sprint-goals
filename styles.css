@@ -1,12 +1,27 @@
-/* Force Jira header containers to grow for the card */
-[data-testid="horizontal-nav-header.ui.board-header.header"]:has(#jsg-sprint-goal-banner) {
+/* Force Jira header rows to grow for the card (legacy + newer testid patterns) */
+[data-testid="horizontal-nav-header.ui.board-header.header"]:has(#jsg-sprint-goal-banner),
+[data-testid^="horizontal-nav-header.ui.board-header"]:has(#jsg-sprint-goal-banner) {
   height: auto !important;
   min-height: auto !important;
   overflow: visible !important;
   align-items: center !important;
 }
 
-[data-testid="horizontal-nav-header.ui.board-header.header"]:has(#jsg-sprint-goal-banner) > * {
+[data-testid="horizontal-nav-header.ui.board-header.header"]:has(#jsg-sprint-goal-banner) > *,
+[data-testid^="horizontal-nav-header.ui.board-header"]:has(#jsg-sprint-goal-banner) > * {
+  height: auto !important;
+  min-height: auto !important;
+  overflow: visible !important;
+}
+
+[data-testid*="board-header.header"]:has(#jsg-sprint-goal-banner) {
+  height: auto !important;
+  min-height: auto !important;
+  overflow: visible !important;
+  align-items: center !important;
+}
+
+[data-testid*="board-header.header"]:has(#jsg-sprint-goal-banner) > * {
   height: auto !important;
   min-height: auto !important;
   overflow: visible !important;

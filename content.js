@@ -2,20 +2,21 @@
   'use strict';
 
   const BANNER_ID = 'jsg-sprint-goal-banner';
+  const BANNER_SEL = '#' + BANNER_ID;
   let currentBoardId = null;
   let currentSprintData = null;
   let cachedDaysText = null;
+  let injectQueue = Promise.resolve();
+  let navigateDebounceTimer = null;
 
   // ---------------------------------------------------------------------------
   // URL parsing
   // ---------------------------------------------------------------------------
 
   function extractBoardId(url) {
-    // New nav: /jira/software/projects/{KEY}/boards/{boardId}
     const newNav = url.match(/\/jira\/software\/(?:c\/)?projects\/[^/]+\/boards\/(\d+)/);
     if (newNav) return newNav[1];
 
-    // Classic: /secure/RapidBoard.jspa?rapidView={boardId}
     const classic = url.match(/[?&]rapidView=(\d+)/);
     if (classic) return classic[1];
 
@@ -31,7 +32,11 @@
       `/rest/agile/1.0/board/${boardId}/sprint?state=active`,
       { credentials: 'same-origin', headers: { Accept: 'application/json' } }
     );
-    if (!resp.ok) throw new Error(`Sprint API ${resp.status}`);
+    if (!resp.ok) {
+      const err = new Error(`Sprint API ${resp.status}`);
+      err.status = resp.status;
+      throw err;
+    }
     const data = await resp.json();
     return data.values || [];
   }
@@ -62,12 +67,22 @@
   // DOM injection
   // ---------------------------------------------------------------------------
 
-  function removeBanner() {
-    const existing = document.getElementById(BANNER_ID);
-    if (existing) existing.remove();
+  function removeAllBanners() {
+    document.querySelectorAll(BANNER_SEL).forEach((n) => n.remove());
   }
 
-  function buildBanner(sprint) {
+  /** Keeps the first banner node; removes duplicate ids (invalid DOM from race conditions). */
+  function dedupeBanners() {
+    const nodes = document.querySelectorAll(BANNER_SEL);
+    for (let i = 1; i < nodes.length; i++) nodes[i].remove();
+    return nodes[0] || null;
+  }
+
+  function removeBanner() {
+    removeAllBanners();
+  }
+
+  function bannerInnerHtml(sprint) {
     const daysText = cachedDaysText || '';
     const days = parseDaysNumber(daysText);
     const goalText = sprint.goal || 'No sprint goal set';
@@ -79,19 +94,27 @@
       else if (days <= 5) urgencyClass = 'jsg-days-warning';
     }
 
-    const banner = document.createElement('div');
-    banner.id = BANNER_ID;
-    banner.className = 'jsg-card';
-
-    banner.innerHTML = `
+    return `
       <div class="jsg-card-header">
         <span class="jsg-sprint-name">${escapeHtml(sprint.name)}</span>
         ${daysText ? `<span class="jsg-header-sep">&ndash;</span><span class="jsg-days-text ${urgencyClass}">${escapeHtml(daysText)}</span>` : ''}
       </div>
       <div class="jsg-goal-text ${hasGoal ? '' : 'jsg-no-goal'}">${escapeHtml(goalText)}</div>
     `;
+  }
 
+  function buildBanner(sprint) {
+    const banner = document.createElement('div');
+    banner.id = BANNER_ID;
+    banner.className = 'jsg-card';
+    banner.innerHTML = bannerInnerHtml(sprint);
     return banner;
+  }
+
+  function fillBannerElement(banner, sprint) {
+    banner.id = BANNER_ID;
+    banner.className = 'jsg-card';
+    banner.innerHTML = bannerInnerHtml(sprint);
   }
 
   function escapeHtml(str) {
@@ -100,13 +123,75 @@
     return div.innerHTML;
   }
 
+  function findBoardRoot() {
+    return (
+      document.querySelector('[data-testid="software-board.board"]') ||
+      document.querySelector('[data-testid="software-board.board-container"]') ||
+      document.querySelector('#jira-frontend') ||
+      document.querySelector('#ak-main-content') ||
+      null
+    );
+  }
+
+  /**
+   * Prefer board header rows (insert before last toolbar child).
+   * Fall back to prepending inside board shell / main.
+   */
   function findInsertionPoint() {
-    const header = document.querySelector(
+    const root = findBoardRoot();
+
+    const tryHeaderEl = (header) => {
+      if (!header) return null;
+      if (header.children.length >= 2) {
+        return { el: header, ref: header.lastElementChild };
+      }
+      if (header.children.length === 1) {
+        return { el: header, ref: header.lastElementChild };
+      }
+      return null;
+    };
+
+    const legacy = document.querySelector(
       '[data-testid="horizontal-nav-header.ui.board-header.header"]'
     );
-    if (header && header.children.length >= 2) {
-      return { el: header, ref: header.lastElementChild, mode: 'before' };
+    const legacyHit = tryHeaderEl(legacy);
+    if (legacyHit) return legacyHit;
+
+    const exactHeaderTestIds = [
+      '[data-testid^="horizontal-nav-header.ui.board-header"]',
+      '[data-testid*="board-header.header"]',
+    ];
+
+    const searchScopes = [];
+    if (root) searchScopes.push(root);
+    searchScopes.push(document.body);
+
+    for (const scope of searchScopes) {
+      for (const sel of exactHeaderTestIds) {
+        let el = null;
+        try {
+          el = scope.querySelector(sel);
+        } catch (e) {
+          continue;
+        }
+        const hit = tryHeaderEl(el);
+        if (hit) return hit;
+      }
     }
+
+    if (root) {
+      const broad = root.querySelectorAll('[data-testid*="board-header" i]');
+      for (const el of broad) {
+        const hit = tryHeaderEl(el);
+        if (hit) return hit;
+      }
+    }
+
+    const horizontalInRoot = root
+      ? root.querySelector('[data-testid^="horizontal-nav-header"]')
+      : null;
+    const horizontalHit = tryHeaderEl(horizontalInRoot);
+    if (horizontalHit) return horizontalHit;
 
     const fallbacks = [
       '#ghx-content-main',
@@ -124,27 +209,83 @@
     return null;
   }
 
-  async function injectBanner() {
+  function tryInsertBanner(banner, boardIdAtStart) {
+    if (extractBoardId(window.location.href) !== boardIdAtStart) {
+      removeAllBanners();
+      return 'abort';
+    }
+    const result = findInsertionPoint();
+    if (result) {
+      result.el.insertBefore(banner, result.ref);
+      return 'done';
+    }
+    return 'retry';
+  }
+
+  function runInsertAttempts(banner, boardIdAtStart) {
+    let status = tryInsertBanner(banner, boardIdAtStart);
+    if (status !== 'retry') return;
+
+    const deadline = Date.now() + 20000;
+    let debounceTimer = null;
+
+    const pump = () => {
+      status = tryInsertBanner(banner, boardIdAtStart);
+      return status;
+    };
+
+    const observer = new MutationObserver(() => {
+      if (debounceTimer) return;
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        if (Date.now() > deadline) {
+          observer.disconnect();
+          return;
+        }
+        if (pump() !== 'retry') observer.disconnect();
+      }, 200);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    const poll = setInterval(() => {
+      if (Date.now() > deadline) {
+        clearInterval(poll);
+        observer.disconnect();
+        return;
+      }
+      if (pump() !== 'retry') {
+        clearInterval(poll);
+        observer.disconnect();
+      }
+    }, 400);
+  }
+
+  async function injectBannerImpl() {
+    dedupeBanners();
+
     const boardId = extractBoardId(window.location.href);
     if (!boardId) {
-      removeBanner();
+      removeAllBanners();
+      currentBoardId = null;
       return;
     }
 
-    // Avoid redundant fetches for the same board
-    if (boardId === currentBoardId && document.getElementById(BANNER_ID)) return;
-    currentBoardId = boardId;
+    const startedBoard = boardId;
 
     let sprints;
     try {
       sprints = await fetchActiveSprints(boardId);
     } catch (err) {
-      console.warn('[Sprint Goal] API error:', err.message);
+      if (err.status !== 401) {
+        console.warn('[Sprint Goal] API error:', err.message);
+      }
       return;
     }
 
+    if (extractBoardId(window.location.href) !== startedBoard) return;
+
     if (!sprints.length) {
-      removeBanner();
+      removeAllBanners();
       return;
     }
 
@@ -152,8 +293,10 @@
     currentSprintData = sprint;
 
     const stored = await chrome.storage.local.get('jsg-enabled');
+    if (extractBoardId(window.location.href) !== startedBoard) return;
+
     if (stored['jsg-enabled'] === false) {
-      removeBanner();
+      removeAllBanners();
       return;
     }
 
@@ -162,35 +305,46 @@
       cachedDaysText = formatBusinessDays(bdays);
     }
 
-    removeBanner();
-    const banner = buildBanner(sprint);
+    dedupeBanners();
+    let banner = document.querySelector(BANNER_SEL);
+    if (banner) {
+      fillBannerElement(banner, sprint);
+    } else {
+      banner = buildBanner(sprint);
+    }
 
-    // Wait for the insertion point to appear (Jira lazy-renders)
-    insertWithRetry(banner, 0);
+    currentBoardId = boardId;
+    runInsertAttempts(banner, startedBoard);
   }
 
-  function insertWithRetry(banner, attempt) {
-    const result = findInsertionPoint();
-    if (result) {
-      result.el.insertBefore(banner, result.ref);
-      return;
-    }
-    if (attempt < 20) {
-      setTimeout(() => insertWithRetry(banner, attempt + 1), 500);
-    }
+  function injectBanner() {
+    injectQueue = injectQueue
+      .then(() => injectBannerImpl())
+      .catch((err) => {
+        if (err && err.status === 401) return;
+        console.warn('[Sprint Goal]', err && err.message ? err.message : err);
+      });
   }
 
   // ---------------------------------------------------------------------------
   // SPA navigation detection
   // ---------------------------------------------------------------------------
 
-  function onNavigate() {
+  function onNavigateImmediate() {
     const newBoardId = extractBoardId(window.location.href);
     if (newBoardId !== currentBoardId) {
       currentBoardId = null;
       currentSprintData = null;
     }
     injectBanner();
+  }
+
+  function onNavigate() {
+    if (navigateDebounceTimer) clearTimeout(navigateDebounceTimer);
+    navigateDebounceTimer = setTimeout(() => {
+      navigateDebounceTimer = null;
+      onNavigateImmediate();
+    }, 250);
   }
 
   function patchHistoryMethod(method) {
@@ -208,7 +362,6 @@
     window.addEventListener('popstate', onNavigate);
     window.addEventListener('jsg-locationchange', onNavigate);
 
-    // Listen for messages from the background service worker
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg.type === 'jsg-navigation') onNavigate();
       if (msg.type === 'jsg-toggle') {
@@ -218,7 +371,6 @@
     });
   }
 
-  // Also observe DOM mutations as a safety net -- Jira re-renders aggressively
   function setupMutationObserver() {
     let debounceTimer = null;
     const observer = new MutationObserver(() => {
@@ -226,9 +378,9 @@
       debounceTimer = setTimeout(() => {
         debounceTimer = null;
         const boardId = extractBoardId(window.location.href);
-        if (boardId && !document.getElementById(BANNER_ID)) {
-          injectBanner();
-        }
+        const count = document.querySelectorAll(BANNER_SEL).length;
+        if (boardId && count === 0) injectBanner();
+        else if (boardId && count > 1) dedupeBanners();
       }, 1000);
     });
     observer.observe(document.body, { childList: true, subtree: true });
@@ -245,12 +397,15 @@
     if (days !== null && days <= 2) cls = 'jsg-days-critical';
     else if (days !== null && days <= 5) cls = 'jsg-days-warning';
 
-    const existing = document.querySelector('#' + BANNER_ID + ' .jsg-days-text');
+    const root = document.querySelector(BANNER_SEL);
+    if (!root) return;
+
+    const existing = root.querySelector('.jsg-days-text');
     if (existing) {
       existing.textContent = daysText;
       existing.className = 'jsg-days-text ' + cls;
     } else {
-      const header = document.querySelector('#' + BANNER_ID + ' .jsg-card-header');
+      const header = root.querySelector('.jsg-card-header');
       if (header) {
         const sep = document.createElement('span');
         sep.className = 'jsg-header-sep';
